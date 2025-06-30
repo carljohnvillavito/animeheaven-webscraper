@@ -1,51 +1,55 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { getText } = require('./utils'); // Only need getText now
 
 const BASE_URL = 'https://aniwatchtv.to';
 const AJAX_URL = `${BASE_URL}/ajax/v2`;
 
 /**
- * Fetches the streaming servers and their final source URLs for a single episode.
- * @param {string} episodeId - The ID of the specific episode.
- * @returns {Promise<object>} An object containing SUB and DUB server links.
+ * Fetches the streaming link from a specific server for a given episode.
+ * @param {string} episodeId - The ID of the episode.
+ * @param {string} type - The type of stream ('sub' or 'dub').
+ * @param {string} serverName - The name of the server (e.g., 'Vidstreaming', 'MegaCloud').
+ * @returns {Promise<{url: string}>} A promise that resolves to an object containing the final streaming URL.
  */
-const scrapeStreamingLinks = async (episodeId) => {
-    if (!episodeId) {
-        throw new Error('Episode ID is required');
+const scrapeStreamingLinks = async (episodeId, type, serverName) => {
+    if (!episodeId || !type || !serverName) {
+        throw new Error('Episode ID, type (sub/dub), and server name are all required.');
     }
 
+    // Step 1: Get the list of available servers for the episode
     const { data: serverHtmlResponse } = await axios.get(`${AJAX_URL}/episode/servers?episodeId=${episodeId}`);
     const $ = cheerio.load(serverHtmlResponse.html);
-    
-    const streamingLinks = { sub: [], dub: [] };
-    const promises = [];
 
-    $('.server-item').each((_, serverEl) => {
-        const server = $(serverEl);
-        const serverId = server.data('id');
-        const serverType = server.data('type'); // 'sub' or 'dub'
-        const serverName = server.find('a').text().trim();
-
-        if (serverId && serverType) {
-            const promise = axios.get(`${AJAX_URL}/episode/sources?id=${serverId}`)
-                .then(({ data: sourceResponse }) => {
-                    if (sourceResponse.link && streamingLinks[serverType]) {
-                        streamingLinks[serverType].push({
-                            server: serverName,
-                            url: sourceResponse.link
-                        });
-                    }
-                })
-                .catch(err => {
-                    console.error(`Failed to get source for server ID ${serverId}:`, err.message);
-                });
-                
-            promises.push(promise);
+    // Step 2: Find the specific server ID that matches the user's request
+    let targetServerId = null;
+    $('.server-item').each((_, el) => {
+        const serverEl = $(el);
+        const currentServerType = serverEl.data('type')?.toLowerCase();
+        const currentServerName = getText(serverEl, 'a')?.toLowerCase();
+        
+        // Match both type and name (case-insensitive)
+        if (currentServerType === type.toLowerCase() && currentServerName === serverName.toLowerCase()) {
+            targetServerId = serverEl.data('id');
+            return false; // Break the .each loop
         }
     });
-    
-    await Promise.all(promises);
-    return { streaming_links: streamingLinks };
+
+    // Step 3: If we didn't find the server, throw an error
+    if (!targetServerId) {
+        throw new Error(`Server '${serverName}' of type '${type}' not found for this episode. Please check available servers.`);
+    }
+
+    // Step 4: Use the found server ID to get the final streaming source link
+    const { data: sourceResponse } = await axios.get(`${AJAX_URL}/episode/sources?id=${targetServerId}`);
+
+    if (sourceResponse && sourceResponse.link) {
+        return {
+            url: sourceResponse.link
+        };
+    } else {
+        throw new Error('Could not retrieve the streaming link from the selected server.');
+    }
 };
 
 module.exports = { scrapeStreamingLinks };
