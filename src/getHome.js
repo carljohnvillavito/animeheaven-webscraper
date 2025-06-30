@@ -1,76 +1,189 @@
+const axios = require('axios');
 const cheerio = require('cheerio');
 
-class AniwatchHomeParser {
-  constructor(html) {
-    this.$ = cheerio.load(html);
-    this.baseUrl = 'https://aniwatchtv.to';
-  }
+const BASE_URL = 'https://aniwatchtv.to';
 
-  parse() {
-    return {
-      'Spotlight Lists': this.parseSpotlight(),
-      'Trending Lists': this.parseGroup('.block_area-trending'),
-      'Top Airing Lists': this.parseGroup('.block_area-airing'),
-      'Most Popular Lists': this.parseGroup('.block_area-realtime'),
-      'Most Favorite Lists': this.parseGroup('.block_area-favorite'),
-      'Latest Complete Lists': this.parseGroup('.block_area-ongoing'),
-      'Latest Episodes Lists': this.parseGroup('.block_area-update'),
-      'Top Upcoming Lists': this.parseGroup('.block_area-upcoming'),
-      'Top 10 Lists': this.parseGroup('.block_area-top') // Assumes .block_area-top exists
-    };
-  }
+// --- Helper Functions ---
 
-  parseSpotlight() {
-    const $ = this.$;
-    const list = [];
+/**
+ * Extracts the anime ID from a URL path.
+ * e.g., "/one-piece-100?ref=search" -> "one-piece-100"
+ * @param {string | undefined} href - The URL path.
+ * @returns {string | null} The extracted ID.
+ */
+const parseIdFromHref = (href) => {
+    return href?.split('/')?.pop()?.split('?')[0] ?? null;
+};
 
-    $('#slide a').each((_, el) => {
-      const element = $(el);
-      const href = element.attr('href') || '';
-      const idMatch = href.match(/anime\.php\?([a-zA-Z0-9]+)/) || href.match(/-(\d+)$/);
-      const anime_id = idMatch ? idMatch[1] : null;
-      const image = element.find('img').attr('src') || '';
-      const title = element.find('img').attr('alt') || '';
+/**
+ * Safely parses an integer from a string, removing non-digit characters.
+ * @param {string | undefined} text - The text to parse.
+ * @returns {number | null} The parsed number or null.
+ */
+const safeParseInt = (text) => {
+    if (!text) return null;
+    const number = parseInt(text.replace(/\D/g, ''), 10);
+    return isNaN(number) ? null : number;
+};
 
-      if (anime_id) {
-        list.push({
-          anime_id,
-          title,
-          titlejp: '',
-          image: image.startsWith('http') ? image : this.baseUrl + '/' + image,
-          total_episodes: 'N/A'
-        });
-      }
+/**
+ * Gets and trims the text content of an element found by a selector.
+ * @param {cheerio.Cheerio<any>} element - The parent Cheerio element.
+ * @param {string} selector - The selector to find the child element.
+ * @returns {string | null} The trimmed text or null.
+ */
+const getText = (element, selector) => {
+    return element.find(selector)?.text()?.trim() ?? null;
+};
+
+
+const scrapeHomepage = async () => {
+    const { data } = await axios.get(`${BASE_URL}/home`);
+    const $ = cheerio.load(data);
+
+    const results = {};
+
+    // 1. Spotlight Lists
+    const spotlight = [];
+    $('#slider .swiper-slide').each((_, el) => {
+        const element = $(el);
+        const title = getText(element, '.desi-head-title');
+        if (title) {
+            spotlight.push({
+                anime_id: parseIdFromHref(element.find('.desi-buttons a:first-child').attr('href')),
+                title: title,
+                image_url: element.find('img.film-poster-img').attr('data-src'),
+                total_episodes: safeParseInt(getText(element, '.tick-item.tick-eps')),
+                showType: element.find('.scd-item').eq(0).text().replace(/\s+/g, ' ').trim(),
+                sub: safeParseInt(getText(element, '.tick-item.tick-sub')),
+                dub: safeParseInt(getText(element, '.tick-item.tick-dub')),
+                duration: element.find('.scd-item').eq(1).text().trim(),
+            });
+        }
     });
+    results.spotlight = spotlight;
 
-    return list;
-  }
-
-  parseGroup(selector) {
-    const $ = this.$;
-    const list = [];
-
-    $(`${selector} .film-poster`).each((_, el) => {
-      const parent = $(el).parent();
-      const id = $(el).find('a.item-qtip').attr('data-id');
-      const title = parent.find('.film-name a').attr('title')?.trim() || '';
-      const titlejp = parent.find('.film-name a').attr('data-jname')?.trim() || '';
-      const image = $(el).find('img').attr('data-src') || '';
-      const episodes = $(el).find('.tick-eps').text().trim() || '0';
-
-      if (id && title) {
-        list.push({
-          anime_id: id,
-          title,
-          titlejp,
-          image: image.startsWith('http') ? image : this.baseUrl + '/' + image,
-          total_episodes: episodes
-        });
-      }
+    // 2. Trending Lists
+    const trending = [];
+    $('#trending-home .swiper-slide').each((_, el) => {
+        const element = $(el);
+        const title = getText(element, '.film-title');
+        if(title) {
+            trending.push({
+                anime_id: parseIdFromHref(element.find('a.film-poster').attr('href')),
+                title: title,
+                image_url: element.find('img.film-poster-img').attr('data-src'),
+                total_episodes: null,
+                showType: null,
+                sub: null,
+                dub: null,
+                duration: null
+            });
+        }
     });
+    results.trending = trending;
+    
+    // Helper function for the "featured" blocks (Top Airing, Popular, etc.)
+    const scrapeFeaturedBlock = (selector) => {
+        const list = [];
+        $(selector).find('li').each((_, el) => {
+            const element = $(el);
+            const title = getText(element, 'h3.film-name a');
+            if(title){
+                list.push({
+                    anime_id: parseIdFromHref(element.find('h3.film-name a').attr('href')),
+                    title: title,
+                    image_url: element.find('img.film-poster-img').attr('data-src'),
+                    total_episodes: safeParseInt(getText(element, '.tick-item.tick-eps')),
+                    showType: getText(element, '.fdi-item'),
+                    sub: safeParseInt(getText(element, '.tick-item.tick-sub')),
+                    dub: safeParseInt(getText(element, '.tick-item.tick-dub')),
+                    duration: null
+                });
+            }
+        });
+        return list;
+    }
 
-    return list;
-  }
-}
+    // 3. Top Airing Lists
+    results.topAiring = scrapeFeaturedBlock('.anif-block-01');
 
-module.exports = AniwatchHomeParser;
+    // 4. Most Popular Lists
+    results.mostPopular = scrapeFeaturedBlock('.anif-block-03');
+
+    // 5. Most Favorite Lists
+    results.mostFavorite = scrapeFeaturedBlock('#anime-featured .anif-block-02:first');
+
+    // 6. Latest Completed Lists
+    results.latestCompleted = scrapeFeaturedBlock('#anime-featured .anif-block-02:last');
+    
+    // Helper function for the grid-style blocks (Latest, Upcoming, etc.)
+    const scrapeGridBlock = (selector) => {
+        const list = [];
+        $(selector).find('.flw-item').each((_, el) => {
+            const element = $(el);
+            const title = getText(element, 'h3.film-name a');
+            if(title){
+                list.push({
+                    anime_id: parseIdFromHref(element.find('a.film-poster-ahref').attr('href')),
+                    title: title,
+                    image_url: element.find('img.film-poster-img').attr('data-src'),
+                    total_episodes: safeParseInt(getText(element, '.tick-item.tick-eps')),
+                    showType: getText(element, '.fd-infor .fdi-item:first-child'),
+                    sub: safeParseInt(getText(element, '.tick-item.tick-sub')),
+                    dub: safeParseInt(getText(element, '.tick-item.tick-dub')),
+                    duration: getText(element, '.fdi-duration')
+                });
+            }
+        });
+        return list;
+    }
+
+    // 7. Latest Episodes Lists
+    results.latestEpisodes = scrapeGridBlock('section:has(h2:contains("Latest Episode"))');
+
+    // 8. Top Upcoming Lists
+    const topUpcoming = [];
+     $('section:has(h2:contains("Top Upcoming")) .flw-item').each((_, el) => {
+        const element = $(el);
+         const title = getText(element, 'h3.film-name a');
+         if(title) {
+             topUpcoming.push({
+                anime_id: parseIdFromHref(element.find('a.film-poster-ahref').attr('href')),
+                title: title,
+                image_url: element.find('img.film-poster-img').attr('data-src'),
+                total_episodes: null,
+                showType: getText(element, '.fd-infor .fdi-item:first-child'),
+                sub: null,
+                dub: null,
+                duration: getText(element, '.fdi-item.fdi-duration') // This contains the release date
+             });
+         }
+    });
+    results.topUpcoming = topUpcoming;
+
+    // 9. Top 10 Lists (Today)
+    const top10 = [];
+    $('#top-viewed-day li').each((_, el) => {
+        const element = $(el);
+        const title = getText(element, 'h3.film-name a');
+        if(title) {
+             top10.push({
+                anime_id: parseIdFromHref(element.find('h3.film-name a').attr('href')),
+                title: title,
+                image_url: element.find('img.film-poster-img').attr('data-src'),
+                total_episodes: safeParseInt(getText(element, '.tick-item.tick-eps')),
+                showType: null, // Not available in this section's HTML
+                sub: safeParseInt(getText(element, '.tick-item.tick-sub')),
+                dub: safeParseInt(getText(element, '.tick-item.tick-dub')),
+                duration: null
+            });
+        }
+    });
+    results.top10 = top10;
+
+    return results;
+};
+
+
+module.exports = { scrapeHomepage };
