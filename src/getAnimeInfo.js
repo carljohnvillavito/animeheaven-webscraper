@@ -3,9 +3,10 @@ const cheerio = require('cheerio');
 const { parseIdFromHref, safeParseInt, getText } = require('./utils');
 
 const BASE_URL = 'https://aniwatchtv.to';
+const AJAX_URL = `${BASE_URL}/ajax/v2`;
 
 /**
- * Scrapes detailed information for a specific anime.
+ * Scrapes detailed information for a specific anime, including its full episode list.
  * @param {string} animeId - The ID of the anime (e.g., 'komi-cant-communicate-17906').
  * @returns {Promise<object>} A promise that resolves to an object with the anime's details.
  */
@@ -19,7 +20,6 @@ const scrapeAnimeInfo = async (animeId) => {
     const $ = cheerio.load(data);
 
     const animeInfo = {};
-
     const detailContainer = $('.anisc-detail');
     const infoContainer = $('.anisc-info');
 
@@ -45,6 +45,34 @@ const scrapeAnimeInfo = async (animeId) => {
     animeInfo.studios = infoContainer.find('.item-title:contains("Studios:") a').map((_, el) => $(el).text().trim()).get().join(', ');
     animeInfo.producers = infoContainer.find('.item-title:contains("Producers:") a').map((_, el) => $(el).text().trim()).get().join(', ');
 
+    // --- NEW: Scrape Episode List ---
+    animeInfo.episodes = [];
+    let numericId = null;
+    try {
+        const syncData = JSON.parse($('script#syncData').html());
+        numericId = syncData.anime_id;
+    } catch (e) {
+        console.warn("Could not parse syncData to get numeric ID for episodes.");
+    }
+
+    if (numericId) {
+        try {
+            const { data: episodeData } = await axios.get(`${AJAX_URL}/episode/list/${numericId}`);
+            const $$ = cheerio.load(episodeData.html);
+            $$('.ss-list a.ssl-item').each((_, el) => {
+                const item = $$(el);
+                animeInfo.episodes.push({
+                    episode_id: item.data('id'),
+                    episode_num: item.data('number'),
+                    title: item.attr('title'),
+                    is_dub: item.find('.ssli-lang').text().trim().toLowerCase() === 'dub',
+                });
+            });
+        } catch (err) {
+            console.warn(`Failed to fetch episode list for animeId ${animeId}: ${err.message}`);
+        }
+    }
+    
     // --- Scrape More Seasons ---
     animeInfo.more_seasons = [];
     $('.block_area-seasons .os-item').each((_, el) => {
