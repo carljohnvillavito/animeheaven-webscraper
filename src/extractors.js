@@ -7,11 +7,20 @@ const axios = require('axios');
  */
 const getMegacloudSources = async (url) => {
     try {
-        const mediaId = url.pathname.split('/').pop();
+        // Step 1: Extract the media ID from the URL path and clean it
+        const pathParts = url.pathname.split('/');
+        const mediaIdWithQuery = pathParts.pop() || pathParts.pop(); // Handle trailing slashes
+        
+        // --- THIS IS THE FIX ---
+        // Remove any query parameters from the extracted ID
+        const mediaId = mediaIdWithQuery.split('?')[0];
+
         if (!mediaId) {
             throw new Error('Could not extract media ID from MegaCloud URL.');
         }
 
+        // Step 2: Make a request to MegaCloud's internal API to get the sources
+        // We MUST include the Referer header to mimic a browser request
         const { data } = await axios.get(`https://megacloud.tv/ajax/embed-1/getSources?id=${mediaId}`, {
             headers: {
                 'Referer': url.href,
@@ -39,23 +48,22 @@ const getMegacloudSources = async (url) => {
         };
 
     } catch (error) {
-        console.error("Error extracting MegaCloud sources:", error.message);
+        // Improved error logging
+        console.error(`Error extracting MegaCloud sources from URL ${url.href}:`, error.message);
         throw new Error("Failed to extract sources from MegaCloud.");
     }
 };
 
 /**
- * NEW: Extracts video sources and subtitles from a VidSrc embed URL.
+ * Extracts video sources and subtitles from a VidSrc embed URL.
  * VidSrc is an aggregator and requires multiple steps.
  * @param {URL} url - The URL object of the VidSrc embed page.
  * @returns {Promise<{sources: Array<{url: string, quality: string}>, subtitles: Array<{url: string, lang: string}>}>}
  */
 const getVidSrcSources = async (url) => {
+    // This function remains the same as before, but is ready for when needed.
     try {
-        // Step 1: Get the main VidSrc page to find its internal API endpoint
         const { data: vidsrcHomepage } = await axios.get(url.href);
-        
-        // Find the API URL for sources, it's usually inside a script tag
         const sourcesUrlMatch = vidsrcHomepage.match(/sources:.*?"([^"]+)"/);
         const sourcesUrl = sourcesUrlMatch ? sourcesUrlMatch[1] : null;
 
@@ -63,33 +71,26 @@ const getVidSrcSources = async (url) => {
             throw new Error("Could not find the sources API URL on VidSrc page.");
         }
         
-        // Step 2: Call the sources API
         const { data: sourcesData } = await axios.get(sourcesUrl, {
-            headers: {
-                'Referer': url.href,
-            }
+            headers: { 'Referer': url.href }
         });
 
-        // Step 3: Find the actual video link from the response
-        // VidSrc often provides a link to yet another API (e.g., from vidsrc.stream)
         const finalSourceApiUrl = sourcesData.result ? (sourcesData.result.find(r => r.label === "1080p") || sourcesData.result[0])?.file : null;
         
         if (!finalSourceApiUrl) {
             throw new Error("Could not extract final source API URL from VidSrc.");
         }
         
-        // VidSrc's final response is usually just a redirect to the .m3u8 file
-        // We can get this by making a request and checking the 'location' header of the response
         const finalResponse = await axios.get(finalSourceApiUrl, {
-             maxRedirects: 0, // We want the redirect URL, not to follow it
-             validateStatus: status => status === 302 || status === 200, // Accept redirects as valid
+             maxRedirects: 0,
+             validateStatus: status => status === 302 || status === 200,
         });
         
         const m3u8Url = finalResponse.headers.location || finalSourceApiUrl;
         
         return {
-            sources: [{ url: m3u8Url, quality: 'auto' }], // VidSrc often doesn't provide multiple qualities directly
-            subtitles: [] // VidSrc subtitles are typically embedded in the stream
+            sources: [{ url: m3u8Url, quality: 'auto' }],
+            subtitles: []
         };
 
     } catch (error) {
