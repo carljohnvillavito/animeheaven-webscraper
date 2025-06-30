@@ -1,83 +1,76 @@
 const cheerio = require('cheerio');
 
-class AnimeHeavenHomeParser {
+class AniwatchHomeParser {
   constructor(html) {
     this.$ = cheerio.load(html);
-    this.baseUrl = 'https://animeheaven.me/';
+    this.baseUrl = 'https://aniwatchtv.to';
   }
 
   parse() {
     return {
-      'Subbed Anime Schedule': this.parseCharts('Subbed Anime Schedule'),
-      'See More Releases': this.parseSeeMore(),
-      'Popular': this.parsePopular()
+      'Spotlight Lists': this.parseSpotlight(),
+      'Trending Lists': this.parseGroup('.block_area-trending'),
+      'Top Airing Lists': this.parseGroup('.block_area-airing'),
+      'Most Popular Lists': this.parseGroup('.block_area-realtime'),
+      'Most Favorite Lists': this.parseGroup('.block_area-favorite'),
+      'Latest Complete Lists': this.parseGroup('.block_area-ongoing'),
+      'Latest Episodes Lists': this.parseGroup('.block_area-update'),
+      'Top Upcoming Lists': this.parseGroup('.block_area-upcoming'),
+      'Top 10 Lists': this.parseGroup('.block_area-top') // Assumes .block_area-top exists
     };
   }
 
-  parseCharts(sectionName) {
+  parseSpotlight() {
     const $ = this.$;
-    const result = [];
+    const list = [];
 
-    $('.chart').each((i, elem) => {
-      const anchor = $(elem).find('a').first();
-      const animeHref = anchor.attr('href');
-      const animeId = this.extractAnimeId(animeHref);
+    $('#slide a').each((_, el) => {
+      const element = $(el);
+      const href = element.attr('href') || '';
+      const idMatch = href.match(/anime\.php\?([a-zA-Z0-9]+)/) || href.match(/-(\d+)$/);
+      const anime_id = idMatch ? idMatch[1] : null;
+      const image = element.find('img').attr('src') || '';
+      const title = element.find('img').attr('alt') || '';
 
-      const imageSrc = $(elem).find('img.coverimg').attr('src');
-      const fullImage = imageSrc?.startsWith('http') ? imageSrc : this.baseUrl + imageSrc;
-
-      const title = $(elem).find('.charttitle a').text().trim();
-      const titlejp = $(elem).find('.charttitlejp').text().trim();
-      const totalEpisodes = parseInt($(elem).find('.chartepm').text().trim()) || 0;
-
-      result.push({
-        anime_id: animeId,
-        title,
-        titlejp,
-        image: fullImage,
-        total_episodes: totalEpisodes
-      });
+      if (anime_id) {
+        list.push({
+          anime_id,
+          title,
+          titlejp: '',
+          image: image.startsWith('http') ? image : this.baseUrl + '/' + image,
+          total_episodes: 'N/A'
+        });
+      }
     });
 
-    return result;
+    return list;
   }
 
-  parseSeeMore() {
-    // Same structure as Subbed Anime Schedule – relies on position
-    return this.parseCharts('See More Releases');
-  }
-
-  parsePopular() {
+  parseGroup(selector) {
     const $ = this.$;
-    const result = [];
+    const list = [];
 
-    $('.popularbox2').each((i, elem) => {
-      const anchor = $(elem).find('a');
-      const href = anchor.attr('href');
-      const animeId = this.extractAnimeId(href);
+    $(`${selector} .film-poster`).each((_, el) => {
+      const parent = $(el).parent();
+      const id = $(el).find('a.item-qtip').attr('data-id');
+      const title = parent.find('.film-name a').attr('title')?.trim() || '';
+      const titlejp = parent.find('.film-name a').attr('data-jname')?.trim() || '';
+      const image = $(el).find('img').attr('data-src') || '';
+      const episodes = $(el).find('.tick-eps').text().trim() || '0';
 
-      const img = anchor.find('img');
-      const title = img.attr('alt')?.trim();
-      const image = img.attr('src');
-      const fullImage = image?.startsWith('http') ? image : this.baseUrl + image;
-
-      result.push({
-        anime_id: animeId,
-        title: title || '',
-        titlejp: '',
-        image: fullImage,
-        total_episodes: 0 // not available in the popular section
-      });
+      if (id && title) {
+        list.push({
+          anime_id: id,
+          title,
+          titlejp,
+          image: image.startsWith('http') ? image : this.baseUrl + '/' + image,
+          total_episodes: episodes
+        });
+      }
     });
 
-    return result;
-  }
-
-  extractAnimeId(href) {
-    if (!href) return null;
-    const match = href.match(/anime\.php\?([a-zA-Z0-9]+)/);
-    return match ? match[1] : null;
+    return list;
   }
 }
 
-module.exports = AnimeHeavenHomeParser;
+module.exports = AniwatchHomeParser;
