@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const { scrapeHomepage } = require('./src/getHome');
-const { scrapeSearchResults } = require('./src/search'); // Import the search function
+const { scrapeSearchResults } = require('./src/search');
+const { scrapeAnimeInfo } = require('./src/getAnimeInfo'); // Import the new function
 
 const app = express();
-const PORT = process.env.PORT || 8080; // Changed port to avoid conflicts with common dev ports
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors());
@@ -18,6 +19,7 @@ app.get('/', (req, res) => {
         routes: {
             homepage: '/home',
             search: '/search?s={query}&page={page_number}',
+            anime_info: '/info?id={anime_id}', // Add new route to docs
         },
     });
 });
@@ -35,7 +37,6 @@ app.get('/home', async (req, res) => {
     }
 });
 
-// Add the new search route
 app.get('/search', async (req, res) => {
     try {
         const query = req.query.s;
@@ -55,6 +56,26 @@ app.get('/search', async (req, res) => {
         });
     }
 });
+
+// Add the new /info route
+app.get('/info', async (req, res) => {
+    try {
+        const animeId = req.query.id;
+        if (!animeId) {
+            return res.status(400).json({ error: 'Anime ID (id) is required.' });
+        }
+        
+        const results = await scrapeAnimeInfo(animeId);
+        res.status(200).json(results);
+    } catch (error) {
+        console.error(`Error in /info route for id "${req.query.id}":`, error);
+        res.status(500).json({
+            error: 'Failed to fetch anime info from the source.',
+            details: error.message,
+        });
+    }
+});
+
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
