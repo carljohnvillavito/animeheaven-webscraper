@@ -1,17 +1,12 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { getText } = require('./utils'); // Only need getText now
+const { getText } = require('./utils');
+// Import our new extractor
+const { getMegacloudSources } = require('./extractors');
 
 const BASE_URL = 'https://aniwatchtv.to';
 const AJAX_URL = `${BASE_URL}/ajax/v2`;
 
-/**
- * Fetches the streaming link from a specific server for a given episode.
- * @param {string} episodeId - The ID of the episode.
- * @param {string} type - The type of stream ('sub' or 'dub').
- * @param {string} serverName - The name of the server (e.g., 'Vidstreaming', 'MegaCloud').
- * @returns {Promise<{url: string}>} A promise that resolves to an object containing the final streaming URL.
- */
 const scrapeStreamingLinks = async (episodeId, type, serverName) => {
     if (!episodeId || !type || !serverName) {
         throw new Error('Episode ID, type (sub/dub), and server name are all required.');
@@ -21,34 +16,47 @@ const scrapeStreamingLinks = async (episodeId, type, serverName) => {
     const { data: serverHtmlResponse } = await axios.get(`${AJAX_URL}/episode/servers?episodeId=${episodeId}`);
     const $ = cheerio.load(serverHtmlResponse.html);
 
-    // Step 2: Find the specific server ID that matches the user's request
+    // Step 2: Find the specific server ID
     let targetServerId = null;
     $('.server-item').each((_, el) => {
         const serverEl = $(el);
         const currentServerType = serverEl.data('type')?.toLowerCase();
         const currentServerName = getText(serverEl, 'a')?.toLowerCase();
         
-        // Match both type and name (case-insensitive)
-        if (currentServerType === type.toLowerCase() && currentServerName === serverName.toLowerCase()) {
+        if (currentServerType === type.toLowerCase() && currentServerName.includes(serverName.toLowerCase())) {
             targetServerId = serverEl.data('id');
-            return false; // Break the .each loop
+            return false;
         }
     });
 
-    // Step 3: If we didn't find the server, throw an error
     if (!targetServerId) {
-        throw new Error(`Server '${serverName}' of type '${type}' not found for this episode. Please check available servers.`);
+        throw new Error(`Server '${serverName}' of type '${type}' not found for this episode.`);
     }
 
-    // Step 4: Use the found server ID to get the final streaming source link
+    // Step 3: Get the iframe/embed URL
     const { data: sourceResponse } = await axios.get(`${AJAX_URL}/episode/sources?id=${targetServerId}`);
 
-    if (sourceResponse && sourceResponse.link) {
+    if (!sourceResponse || !sourceResponse.link) {
+        throw new Error('Could not retrieve the embed link from Aniwatch.');
+    }
+    
+    const embedUrl = new URL(sourceResponse.link);
+
+    // Step 4: Use the correct extractor based on the embed URL domain
+    if (embedUrl.hostname.includes('megacloud')) {
+        return await getMegacloudSources(embedUrl);
+    } 
+    // You would add other extractors here, e.g., for Vidstreaming
+    // else if (embedUrl.hostname.includes('vidstreaming')) {
+    //     return await getVidstreamingSources(embedUrl);
+    // } 
+    else {
+        // As a fallback, return the embed URL if we don't have a dedicated extractor
+        console.warn(`No extractor found for ${embedUrl.hostname}. Returning embed URL.`);
         return {
-            url: sourceResponse.link
+            unsupported_embed_url: embedUrl.href,
+            message: "This video host is not fully supported yet. Direct video links could not be extracted."
         };
-    } else {
-        throw new Error('Could not retrieve the streaming link from the selected server.');
     }
 };
 
