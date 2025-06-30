@@ -13,12 +13,16 @@ app.get('/home/', async (req, res) => {
       },
     });
 
-    // Respond with raw HTML source content
-    res.set('Content-Type', 'text/plain');
-    res.send(response.data);
+    const htmlSource = response.data;
+
+    // Respond with JSON containing the HTML source
+    res.json({
+      source: htmlSource
+    });
+
   } catch (error) {
-    console.error('Error fetching source:', error.message);
-    res.status(500).json({ error: 'Failed to fetch source HTML content.' });
+    console.error('Error fetching HTML source:', error.message);
+    res.status(500).json({ error: 'Failed to fetch HTML source content.' });
   }
 });
 
