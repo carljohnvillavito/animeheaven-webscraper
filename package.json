@@ -1,14 +1,28 @@
 {
-  "name": "animeheaven-scraper",
+  "name": "aniwatch-scraper",
   "version": "1.0.0",
-  "description": "Web scraper for animeheaven.me using Axios and Cheerio",
+  "description": "A web scraper for aniwatchtv.to homepage",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
+  "keywords": [
+    "web-scraper",
+    "anime",
+    "cheerio",
+    "axios",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "axios": "^1.6.8",
+    "axios": "^1.7.2",
     "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   }
 }
