@@ -1,31 +1,35 @@
 const express = require('express');
 const axios = require('axios');
+const AnimeHeavenHomeParser = require('./src/getHome');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/home/', async (req, res) => {
   try {
+    // Fetch raw HTML source from animeheaven
     const response = await axios.get('https://animeheaven.me', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'text/html',
-      },
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'text/html'
+      }
     });
 
-    const htmlSource = response.data;
+    const html = response.data;
 
-    // Respond with JSON containing the HTML source
-    res.json({
-      source: htmlSource
-    });
+    // Parse metadata using your Cheerio-powered class
+    const parser = new AnimeHeavenHomeParser(html);
+    const data = parser.parse();
+
+    // Return structured metadata JSON
+    res.json(data);
 
   } catch (error) {
-    console.error('Error fetching HTML source:', error.message);
-    res.status(500).json({ error: 'Failed to fetch HTML source content.' });
+    console.error('[ERROR] Failed to fetch or parse:', error.message);
+    res.status(500).json({ error: 'Failed to fetch or parse AnimeHeaven homepage.' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/home/`);
+  console.log(`✅ Server running at: http://localhost:${PORT}/home/`);
 });
