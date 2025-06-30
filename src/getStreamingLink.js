@@ -1,8 +1,8 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getText } = require('./utils');
-// Import our new extractor
-const { getMegacloudSources } = require('./extractors');
+// Import both extractors
+const { getMegacloudSources, getVidSrcSources } = require('./extractors');
 
 const BASE_URL = 'https://aniwatchtv.to';
 const AJAX_URL = `${BASE_URL}/ajax/v2`;
@@ -12,7 +12,7 @@ const scrapeStreamingLinks = async (episodeId, type, serverName) => {
         throw new Error('Episode ID, type (sub/dub), and server name are all required.');
     }
 
-    // Step 1: Get the list of available servers for the episode
+    // Step 1: Get the list of available servers
     const { data: serverHtmlResponse } = await axios.get(`${AJAX_URL}/episode/servers?episodeId=${episodeId}`);
     const $ = cheerio.load(serverHtmlResponse.html);
 
@@ -21,6 +21,7 @@ const scrapeStreamingLinks = async (episodeId, type, serverName) => {
     $('.server-item').each((_, el) => {
         const serverEl = $(el);
         const currentServerType = serverEl.data('type')?.toLowerCase();
+        // Use includes() for a partial match (e.g., 'vidsrc' will match 'VidSrc')
         const currentServerName = getText(serverEl, 'a')?.toLowerCase();
         
         if (currentServerType === type.toLowerCase() && currentServerName.includes(serverName.toLowerCase())) {
@@ -33,7 +34,7 @@ const scrapeStreamingLinks = async (episodeId, type, serverName) => {
         throw new Error(`Server '${serverName}' of type '${type}' not found for this episode.`);
     }
 
-    // Step 3: Get the iframe/embed URL
+    // Step 3: Get the embed URL
     const { data: sourceResponse } = await axios.get(`${AJAX_URL}/episode/sources?id=${targetServerId}`);
 
     if (!sourceResponse || !sourceResponse.link) {
@@ -45,14 +46,10 @@ const scrapeStreamingLinks = async (episodeId, type, serverName) => {
     // Step 4: Use the correct extractor based on the embed URL domain
     if (embedUrl.hostname.includes('megacloud')) {
         return await getMegacloudSources(embedUrl);
-    } 
-    // You would add other extractors here, e.g., for Vidstreaming
-    // else if (embedUrl.hostname.includes('vidstreaming')) {
-    //     return await getVidstreamingSources(embedUrl);
-    // } 
-    else {
-        // As a fallback, return the embed URL if we don't have a dedicated extractor
-        console.warn(`No extractor found for ${embedUrl.hostname}. Returning embed URL.`);
+    } else if (embedUrl.hostname.includes('vidsrc')) { // NEW LOGIC
+        return await getVidSrcSources(embedUrl);
+    } else {
+        console.warn(`No extractor found for ${embedUrl.hostname}. Returning embed URL as fallback.`);
         return {
             unsupported_embed_url: embedUrl.href,
             message: "This video host is not fully supported yet. Direct video links could not be extracted."
