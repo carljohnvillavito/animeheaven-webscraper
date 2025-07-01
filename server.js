@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 
-// Import all controllers
-import { getHomepage, getSearchResults, getAnimeInfo } from './src/controllers/main.controller.js';
-import { getServers, getStream } from './src/controllers/stream.controller.js';
+// Import all controllers with corrected paths
+import { getHomepage, getSearchResults, getAnimeInfo } from './controllers/main.controller.js';
+import { getServers, getStream } from './controllers/stream.controller.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
