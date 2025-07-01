@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 
-// Import all controllers with the correct paths from the root directory
+// Since server.js is in the root, paths must start with ./src/
 import { getHomepage, getSearchResults, getAnimeInfo } from './src/controllers/main.controller.js';
 import { getServers, getStream } from './src/controllers/stream.controller.js';
 
@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-// --- API Documentation Route ---
+// API Documentation Route
 app.get('/', (req, res) => {
     res.status(200).json({
         message: "Welcome to the Unofficial AniWatch Scraper API!",
@@ -26,14 +26,14 @@ app.get('/', (req, res) => {
     });
 });
 
-// --- Main Application Routes ---
+// Main Application Routes
 app.get('/home', getHomepage);
 app.get('/search', getSearchResults);
 app.get('/info', getAnimeInfo);
 app.get('/servers', getServers);
 app.get('/stream', getStream);
 
-// --- Server Initialization ---
+// Server Initialization
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
