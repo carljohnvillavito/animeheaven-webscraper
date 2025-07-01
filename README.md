@@ -1,2 +1,2 @@
-# animeheaven-webscraper
-Web Scrape Metadata of AnimeHeaven.ME
+# aniwatchtv-webscraper
+Web Scrape Metadata of AniWatchTv.To
