@@ -1,8 +1,9 @@
 {
   "name": "aniwatch-scraper",
   "version": "1.0.0",
-  "description": "A web scraper for aniwatchtv.to homepage",
+  "description": "A web scraper for aniwatchtv.to",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
