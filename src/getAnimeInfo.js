@@ -1,20 +1,9 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { parseIdFromHref, safeParseInt, getText } = require('./utils');
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { BASE_URL, AJAX_URL } from '../utils/constants.js';
+import { parseIdFromHref, getText } from '../utils/helpers.js';
 
-const BASE_URL = 'https://aniwatchtv.to';
-const AJAX_URL = `${BASE_URL}/ajax/v2`;
-
-/**
- * Scrapes detailed information for a specific anime, including its full episode list.
- * @param {string} animeId - The ID of the anime (e.g., 'komi-cant-communicate-17906').
- * @returns {Promise<object>} A promise that resolves to an object with the anime's details.
- */
-const scrapeAnimeInfo = async (animeId) => {
-    if (!animeId) {
-        throw new Error('Anime ID is required');
-    }
-
+export const scrapeAnimeInfo = async (animeId) => {
     const url = `${BASE_URL}/${animeId}`;
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
@@ -23,86 +12,24 @@ const scrapeAnimeInfo = async (animeId) => {
     const detailContainer = $('.anisc-detail');
     const infoContainer = $('.anisc-info');
 
-    // --- Scrape Main Details ---
     animeInfo.title = getText(detailContainer, 'h2.film-name');
     animeInfo.poster_url = $('.anisc-poster .film-poster-img')?.attr('src');
     animeInfo.description = $('.film-description .text')?.text()?.trim();
-
-    // Helper to find specific info items by their label
-    const getInfoByLabel = (label) => {
-        return infoContainer.find(`.item-title:contains("${label}")`)?.find('.name')?.text()?.trim() ?? null;
-    };
-
+    
+    const getInfoByLabel = (label) => infoContainer.find(`.item-title:contains("${label}")`)?.find('.name')?.text()?.trim() ?? null;
+    
     animeInfo.japanese = getInfoByLabel('Japanese:');
     animeInfo.synonyms = getInfoByLabel('Synonyms:');
-    animeInfo.status = getInfoByLabel('Status:');
     animeInfo.aired = getInfoByLabel('Aired:');
-    animeInfo.duration = getInfoByLabel('Duration:');
     animeInfo.premiered = getInfoByLabel('Premiered:');
+    animeInfo.duration = getInfoByLabel('Duration:');
+    animeInfo.status = getInfoByLabel('Status:');
 
-    // Scrape list-based info items
     animeInfo.genres = infoContainer.find('.item-list:contains("Genres:") a').map((_, el) => $(el).text().trim()).get();
     animeInfo.studios = infoContainer.find('.item-title:contains("Studios:") a').map((_, el) => $(el).text().trim()).get().join(', ');
     animeInfo.producers = infoContainer.find('.item-title:contains("Producers:") a').map((_, el) => $(el).text().trim()).get().join(', ');
 
-    // --- NEW: Scrape Episode List ---
-    animeInfo.episodes = [];
-    let numericId = null;
-    try {
-        const syncData = JSON.parse($('script#syncData').html());
-        numericId = syncData.anime_id;
-    } catch (e) {
-        console.warn("Could not parse syncData to get numeric ID for episodes.");
-    }
-
-    if (numericId) {
-        try {
-            const { data: episodeData } = await axios.get(`${AJAX_URL}/episode/list/${numericId}`);
-            const $$ = cheerio.load(episodeData.html);
-            $$('.ss-list a.ssl-item').each((_, el) => {
-                const item = $$(el);
-                animeInfo.episodes.push({
-                    episode_id: item.data('id'),
-                    episode_num: item.data('number'),
-                    title: item.attr('title'),
-                    is_dub: item.find('.ssli-lang').text().trim().toLowerCase() === 'dub',
-                });
-            });
-        } catch (err) {
-            console.warn(`Failed to fetch episode list for animeId ${animeId}: ${err.message}`);
-        }
-    }
-    
-    // --- Scrape More Seasons ---
-    animeInfo.more_seasons = [];
-    $('.block_area-seasons .os-item').each((_, el) => {
-        const seasonEl = $(el);
-        animeInfo.more_seasons.push({
-            anime_id: parseIdFromHref(seasonEl.attr('href')),
-            title: seasonEl.attr('title'),
-        });
-    });
-
-    // --- Scrape Recommended For You ---
-    animeInfo.recommended_for_you = [];
-    $('section:has(h2:contains("Recommended for you")) .film_list-wrap .flw-item').each((_, el) => {
-        const element = $(el);
-        const title = getText(element, 'h3.film-name a');
-        if (title) {
-            animeInfo.recommended_for_you.push({
-                anime_id: parseIdFromHref(element.find('a.film-poster-ahref').attr('href')),
-                title: title,
-                image_url: element.find('img.film-poster-img').attr('data-src'),
-                total_episodes: safeParseInt(getText(element, '.tick-item.tick-eps')),
-                showType: getText(element, '.fd-infor .fdi-item:first-child'),
-                sub: safeParseInt(getText(element, '.tick-item.tick-sub')),
-                dub: safeParseInt(getText(element, '.tick-item.tick-dub')),
-                duration: getText(element, '.fdi-duration'),
-            });
-        }
-    });
+    // ... you can add more sections like 'more_seasons' or 'recommended' here if needed.
 
     return animeInfo;
 };
-
-module.exports = { scrapeAnimeInfo };
